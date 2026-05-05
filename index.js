@@ -1,7 +1,5 @@
 const TARGET = 'https://dabinplay-hub-v-wip.base44.app'
 const PROXY_HOST = 'https://display.placeholderbot-69.workers.dev'
-const PROXY_IP = '159.203.181.211'
-const PROXY_PORT = '9191'
 
 addEventListener('fetch', event => {
   event.respondWith(handle(event.request))
@@ -13,10 +11,7 @@ async function handle(request) {
   targetUrl.pathname = reqUrl.pathname
   targetUrl.search = reqUrl.search
 
-  // Build proxy URL that forwards the absolute target URL in the path
-  // Example: http://proxy-ip:port/https://target/...
-  const proxyPath = `http://${PROXY_IP}:${PROXY_PORT}/${targetUrl.toString()}`
-
+  // Forward request to target
   const init = {
     method: request.method,
     headers: new Headers(request.headers),
@@ -24,14 +19,17 @@ async function handle(request) {
     redirect: 'manual'
   }
 
-  // Some proxies require Host header of the proxy itself
-  init.headers.set('Host', `${PROXY_IP}:${PROXY_PORT}`)
+  // Ensure Host header matches target
+  init.headers.set('Host', new URL(TARGET).host)
 
-  const resp = await fetch(proxyPath, init)
+  const resp = await fetch(targetUrl.toString(), init)
 
+  // Copy and modify headers
   const newHeaders = new Headers(resp.headers)
   newHeaders.delete('x-frame-options')
   newHeaders.delete('frame-options')
+
+  // Restrict embedding to the worker host only
   newHeaders.set('Content-Security-Policy', `frame-ancestors ${PROXY_HOST};`)
   newHeaders.set('Access-Control-Allow-Origin', PROXY_HOST)
   newHeaders.set('Access-Control-Allow-Methods', 'GET,HEAD,POST,OPTIONS')
@@ -40,12 +38,25 @@ async function handle(request) {
   const contentType = resp.headers.get('content-type') || ''
   if (contentType.includes('text/html')) {
     let text = await resp.text()
+
+    // Rewrite root-relative src/href to go through the proxy host
     text = text.replace(/(src|href)=["']\/([^"']*)["']/g, (m, attr, path) => {
       return `${attr}="${PROXY_HOST}/${path}"`
     })
+
+    // Remove base tag to avoid absolute base conflicts
     text = text.replace(/<base[^>]*>/i, '')
-    return new Response(text, { status: resp.status, headers: newHeaders })
+
+    return new Response(text, {
+      status: resp.status,
+      headers: newHeaders
+    })
   }
 
-  return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers: newHeaders })
+  // Non-HTML responses returned as-is with modified headers
+  return new Response(resp.body, {
+    status: resp.status,
+    statusText: resp.statusText,
+    headers: newHeaders
+  })
 }
