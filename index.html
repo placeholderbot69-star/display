@@ -3,28 +3,276 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Open Proxied Site</title>
+  <title>Proxy / Origin Diagnostic</title>
   <style>
-    html,body{height:100%;margin:0;display:flex;align-items:center;justify-content:center;font-family:system-ui,Segoe UI,Roboto,Arial;background:#0b0b0b;color:#fff}
-    .card{max-width:720px;padding:24px;border-radius:12px;background:#0f1724;text-align:center}
-    a.btn{display:inline-block;margin-top:12px;padding:10px 14px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none}
+    :root{--bg:#0b0f1a;--card:#0f1724;--muted:#9aa;--accent:#2563eb;--ok:#16a34a;--bad:#ef4444}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;background:var(--bg);color:#e6eef8}
+    .wrap{max-width:1100px;margin:28px auto;padding:20px}
+    h1{margin:0 0 8px;font-size:20px}
+    p.lead{margin:0 0 18px;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .card{background:var(--card);border-radius:10px;padding:14px;box-shadow:0 6px 18px rgba(2,6,23,.6)}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input[type="text"]{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.06);background:transparent;color:inherit}
+    .row{display:flex;gap:8px;margin-top:10px}
+    button{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+    button.secondary{background:transparent;border:1px solid rgba(255,255,255,.06)}
+    .result{margin-top:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;white-space:pre-wrap;overflow:auto;max-height:360px;padding:10px;border-radius:8px;background:rgba(255,255,255,.02)}
+    .status{display:inline-block;padding:6px 8px;border-radius:8px;font-weight:600}
+    .ok{background:rgba(22,163,74,.12);color:var(--ok)}
+    .fail{background:rgba(239,68,68,.12);color:var(--bad)}
+    .muted{color:var(--muted);font-size:13px}
+    .small{font-size:12px;color:var(--muted)}
+    .links{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    a.link{color:#cfe6ff;text-decoration:none;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.02)}
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Open Proxied Site</h1>
-    <p>You will be redirected to the proxied site served by the worker.</p>
-    <p><a id="openBtn" class="btn" target="_blank" rel="noopener">Open Proxied Site</a></p>
-    <p style="font-size:13px;color:#9aa">If nothing happens, click the button above.</p>
+  <div class="wrap">
+    <h1>Proxy / Origin Diagnostic (HTML)</h1>
+    <p class="lead">Enter the Worker URL and the origin you want to check. This page will probe each endpoint and show status, headers (if available), and a short body snippet. CORS may prevent reading some responses; opaque responses are reported as such.</p>
+
+    <div class="grid">
+      <div class="card">
+        <label for="worker">Worker URL (proxy)</label>
+        <input id="worker" type="text" value="https://display.placeholderbot-69.workers.dev/" />
+        <label for="origin" style="margin-top:10px">Origin / Direct target</label>
+        <input id="origin" type="text" value="https://dabinplay-hub-v-wip.base44.app/" />
+        <label for="upstream" style="margin-top:10px">Upstream proxy (optional, absolute-form)</label>
+        <input id="upstream" type="text" value="http://159.203.181.211:9191/https://dabinplay-hub-v-wip.base44.app/" />
+        <div class="row">
+          <button id="run">Run probes</button>
+          <button id="openWorker" class="secondary">Open Worker</button>
+          <button id="openOrigin" class="secondary">Open Origin</button>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="small">Quick notes: probes use <code>fetch</code>. If CORS blocks access you'll see an "opaque" result — that still means the endpoint is reachable but the browser can't expose headers/body.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;gap:8px;align-items:center;justify-content:space-between">
+          <div>
+            <div class="small">Last run</div>
+            <div id="lastRun" class="muted">never</div>
+          </div>
+          <div>
+            <span id="overall" class="status muted">idle</span>
+          </div>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="small">Results</div>
+
+          <div style="margin-top:8px">
+            <div class="small">Worker probe</div>
+            <div id="workerStatus" class="status muted" style="margin-top:6px">waiting</div>
+            <div id="workerResult" class="result">—</div>
+          </div>
+
+          <div style="margin-top:12px">
+            <div class="small">Upstream proxy probe</div>
+            <div id="upstreamStatus" class="status muted" style="margin-top:6px">waiting</div>
+            <div id="upstreamResult" class="result">—</div>
+          </div>
+
+          <div style="margin-top:12px">
+            <div class="small">Direct origin probe</div>
+            <div id="originStatus" class="status muted" style="margin-top:6px">waiting</div>
+            <div id="originResult" class="result">—</div>
+          </div>
+
+          <div class="links" style="margin-top:12px">
+            <a id="openWorkerLink" class="link" target="_blank" rel="noopener">Open worker in new tab</a>
+            <a id="openOriginLink" class="link" target="_blank" rel="noopener">Open origin in new tab</a>
+            <a id="openUpstreamLink" class="link" target="_blank" rel="noopener">Open upstream proxy in new tab</a>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
-    const WORKER_URL = 'https://display.placeholderbot-69.workers.dev/';
-    const openBtn = document.getElementById('openBtn');
-    openBtn.href = WORKER_URL;
+    // Utility: short snippet of text (first N chars)
+    function snippet(text, n = 2000) {
+      if (!text) return '';
+      return text.length > n ? text.slice(0, n) + '\n\n--- truncated ---' : text;
+    }
 
-    // Optional: auto-redirect after 1.2s
-    setTimeout(() => { window.location.href = WORKER_URL; }, 1200);
+    // Probe function: try CORS fetch, fallback to no-cors to detect reachability
+    async function probeUrl(url, timeoutMs = 6000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+      // Try CORS-enabled fetch first
+      try {
+        const res = await fetch(url, { method: 'GET', cache: 'no-store', mode: 'cors', signal: controller.signal });
+        clearTimeout(timer);
+        const ct = res.headers.get('content-type') || '';
+        let bodyText = null;
+        try {
+          if (ct.includes('text') || ct.includes('html') || ct.includes('json')) {
+            bodyText = await res.text();
+          } else {
+            // for binary or unknown types, try text anyway
+            bodyText = await res.text().catch(() => null);
+          }
+        } catch (e) {
+          bodyText = null;
+        }
+        return {
+          reachable: true,
+          opaque: false,
+          status: res.status,
+          statusText: res.statusText,
+          headers: Array.from(res.headers.entries()),
+          contentType: ct,
+          bodySnippet: snippet(bodyText)
+        };
+      } catch (err) {
+        // If CORS blocked or fetch failed, try no-cors to detect reachability (opaque)
+        clearTimeout(timer);
+        try {
+          const controller2 = new AbortController();
+          const timer2 = setTimeout(() => controller2.abort(), timeoutMs);
+          const res2 = await fetch(url, { method: 'GET', cache: 'no-store', mode: 'no-cors', signal: controller2.signal });
+          clearTimeout(timer2);
+          // no-cors yields an opaque response we cannot inspect
+          return {
+            reachable: true,
+            opaque: true,
+            status: res2.status || 0,
+            statusText: res2.statusText || '',
+            headers: [],
+            contentType: '',
+            bodySnippet: '[opaque response — CORS prevented reading body/headers]'
+          };
+        } catch (err2) {
+          return { reachable: false, error: String(err2) };
+        }
+      }
+    }
+
+    // DOM helpers
+    const workerInput = document.getElementById('worker');
+    const originInput = document.getElementById('origin');
+    const upstreamInput = document.getElementById('upstream');
+    const runBtn = document.getElementById('run');
+    const openWorker = document.getElementById('openWorker');
+    const openOrigin = document.getElementById('openOrigin');
+
+    const lastRun = document.getElementById('lastRun');
+    const overall = document.getElementById('overall');
+
+    const workerStatus = document.getElementById('workerStatus');
+    const workerResult = document.getElementById('workerResult');
+    const upstreamStatus = document.getElementById('upstreamStatus');
+    const upstreamResult = document.getElementById('upstreamResult');
+    const originStatus = document.getElementById('originStatus');
+    const originResult = document.getElementById('originResult');
+
+    const openWorkerLink = document.getElementById('openWorkerLink');
+    const openOriginLink = document.getElementById('openOriginLink');
+    const openUpstreamLink = document.getElementById('openUpstreamLink');
+
+    function setStatus(el, text, ok) {
+      el.textContent = text;
+      el.className = 'status ' + (ok === true ? 'ok' : ok === false ? 'fail' : 'muted');
+    }
+
+    function renderProbe(elStatus, elResult, data) {
+      if (!data) {
+        setStatus(elStatus, 'no data', null);
+        elResult.textContent = '—';
+        return;
+      }
+      if (!data.reachable) {
+        setStatus(elStatus, 'unreachable', false);
+        elResult.textContent = 'Error: ' + (data.error || 'unknown');
+        return;
+      }
+      if (data.opaque) {
+        setStatus(elStatus, 'reachable (opaque)', true);
+        elResult.textContent = [
+          'Opaque response (CORS prevented reading headers/body).',
+          'Status (may be 0): ' + data.status + ' ' + data.statusText,
+          '',
+          data.bodySnippet
+        ].join('\n');
+        return;
+      }
+      // reachable & readable
+      setStatus(elStatus, 'ok ' + data.status, true);
+      const hdrs = data.headers.map(h => h[0] + ': ' + h[1]).join('\n');
+      elResult.textContent = [
+        'Content-Type: ' + (data.contentType || 'unknown'),
+        '',
+        'Headers:',
+        hdrs || '(none)',
+        '',
+        'Body snippet:',
+        data.bodySnippet || '(empty)'
+      ].join('\n');
+    }
+
+    async function runAll() {
+      const workerUrl = workerInput.value.trim();
+      const originUrl = originInput.value.trim();
+      const upstreamUrl = upstreamInput.value.trim();
+
+      lastRun.textContent = new Date().toLocaleString();
+      overall.textContent = 'running…';
+      overall.className = 'status muted';
+
+      setStatus(workerStatus, 'probing…', null);
+      setStatus(upstreamStatus, 'probing…', null);
+      setStatus(originStatus, 'probing…', null);
+
+      workerResult.textContent = '…';
+      upstreamResult.textContent = '…';
+      originResult.textContent = '…';
+
+      // Run probes in parallel
+      const [w, u, o] = await Promise.all([
+        probeUrl(workerUrl).catch(e => ({ reachable:false, error:String(e) })),
+        probeUrl(upstreamUrl).catch(e => ({ reachable:false, error:String(e) })),
+        probeUrl(originUrl).catch(e => ({ reachable:false, error:String(e) }))
+      ]);
+
+      renderProbe(workerStatus, workerResult, w);
+      renderProbe(upstreamStatus, upstreamResult, u);
+      renderProbe(originStatus, originResult, o);
+
+      // Set overall
+      const anyOk = (w && w.reachable) || (u && u.reachable) || (o && o.reachable);
+      if (anyOk) {
+        overall.textContent = 'some endpoints reachable';
+        overall.className = 'status ok';
+      } else {
+        overall.textContent = 'no endpoints reachable';
+        overall.className = 'status fail';
+      }
+
+      // Update quick open links
+      openWorkerLink.href = workerUrl;
+      openOriginLink.href = originUrl;
+      openUpstreamLink.href = upstreamUrl;
+
+      // Buttons open in new tab
+      openWorker.onclick = () => window.open(workerUrl, '_blank', 'noopener');
+      openOrigin.onclick = () => window.open(originUrl, '_blank', 'noopener');
+      openWorkerLink.onclick = (e) => { e.preventDefault(); window.open(workerUrl, '_blank', 'noopener'); };
+      openOriginLink.onclick = (e) => { e.preventDefault(); window.open(originUrl, '_blank', 'noopener'); };
+      openUpstreamLink.onclick = (e) => { e.preventDefault(); window.open(upstreamUrl, '_blank', 'noopener'); };
+    }
+
+    runBtn.addEventListener('click', runAll);
+    openWorker.addEventListener('click', () => window.open(workerInput.value.trim(), '_blank', 'noopener'));
+    openOrigin.addEventListener('click', () => window.open(originInput.value.trim(), '_blank', 'noopener'));
+
+    // Auto-run once on load
+    window.addEventListener('load', () => setTimeout(runAll, 300));
   </script>
 </body>
 </html>
